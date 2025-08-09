@@ -10,14 +10,17 @@ Exposes MCP over Streamable HTTP at /mcp/ path.
 from __future__ import annotations
 
 import os
+import sys
+import base64
+import io
+from pathlib import Path
 from typing import Annotated
 
 from dotenv import load_dotenv
 from fastmcp import FastMCP
-from fastmcp.server.auth.providers.bearer import BearerAuthProvider, RSAKeyPair
+from fastmcp.server.auth import StaticTokenVerifier
 from mcp import ErrorData, McpError
-from mcp.types import TextContent, ImageContent, INVALID_PARAMS, INTERNAL_ERROR
-from mcp.server.auth.provider import AccessToken
+from mcp.types import INTERNAL_ERROR, INVALID_PARAMS, ImageContent, TextContent
 from pydantic import BaseModel, Field, AnyUrl
 
 import markdownify
@@ -33,19 +36,6 @@ MY_NUMBER = os.environ.get("MY_NUMBER")
 
 assert TOKEN is not None, "Please set AUTH_TOKEN in your .env file"
 assert MY_NUMBER is not None, "Please set MY_NUMBER in your .env file"
-
-
-# Auth Provider (Bearer Token for Puch)
-class SimpleBearerAuthProvider(BearerAuthProvider):
-    def __init__(self, token: str):
-        k = RSAKeyPair.generate()
-        super().__init__(public_key=k.public_key, jwks_uri=None, issuer=None, audience=None)
-        self.token = token
-
-    async def load_access_token(self, token: str) -> AccessToken | None:
-        if token == self.token:
-            return AccessToken(token=token, client_id="puch-client", scopes=["*"], expires_at=None)
-        return None
 
 
 class RichToolDescription(BaseModel):
@@ -117,7 +107,12 @@ class Fetch:
 
 
 # Initialize MCP
-mcp = FastMCP("Puch MCP Server", auth=SimpleBearerAuthProvider(TOKEN))
+mcp = FastMCP("Puch MCP Server", auth=StaticTokenVerifier({
+    TOKEN: {
+        "client_id": "puch_client", 
+        "scopes": ["read", "write"]
+    }
+}))
 
 
 # Built-in tool: job_finder
@@ -187,17 +182,48 @@ async def make_img_black_and_white(
         raise McpError(ErrorData(code=INTERNAL_ERROR, message=str(e)))
 
 
+# Add project root to sys.path to ensure `tools` module can be found
+PROJECT_ROOT = Path(__file__).resolve().parent
+if str(PROJECT_ROOT) not in sys.path:
+    sys.path.append(str(PROJECT_ROOT))
+
 # External tools: validate and convert_word_to_pdf
+from tools import convert as convert_tool
+from tools import validate as validate_tool
+
+print("Registering external tools...")
+validate_tool.register(mcp)
+print("✓ Validate tool registered")
+convert_tool.register(mcp)
+print("✓ Convert tool registered")
+
+# Debug FastMCP object to see available attributes
+print("FastMCP attributes:", [attr for attr in dir(mcp) if not attr.startswith('__')])
+
+# Try to get tools using the available methods
 try:
-    from tools import validate as validate_tool
-    from tools import convert as convert_tool
-
-    validate_tool.register(mcp)
-    convert_tool.register(mcp)
+    tools = mcp.get_tools()
+    print(f"Available tools via get_tools(): {[tool.name for tool in tools]}")
 except Exception as e:
-    # Non-fatal; surfaces during tool call if needed
-    print(f"[tools] Warning: failed to register external tools: {e}")
+    print(f"Error getting tools via get_tools(): {e}")
 
+try:
+    tools_list = mcp._list_tools()
+    print(f"Available tools via _list_tools(): {tools_list}")
+except Exception as e:
+    print(f"Error getting tools via _list_tools(): {e}")
+
+# Check tool manager
+if hasattr(mcp, '_tool_manager'):
+    print(f"Tool manager: {mcp._tool_manager}")
+    if hasattr(mcp._tool_manager, 'tools'):
+        print(f"Tools in manager: {list(mcp._tool_manager.tools.keys())}")
+    elif hasattr(mcp._tool_manager, '_tools'):
+        print(f"Tools in manager (_tools): {list(mcp._tool_manager._tools.keys())}")
+    else:
+        print(f"Tool manager attributes: {[attr for attr in dir(mcp._tool_manager) if not attr.startswith('_')]}" )
 
 # Expose ASGI app for uvicorn
 app = mcp.http_app()  # Default path: /mcp/
+
+print("Server setup complete. Available at http://0.0.0.0:8086/mcp/")
