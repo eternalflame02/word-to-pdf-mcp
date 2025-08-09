@@ -1,11 +1,10 @@
 [project]
-name = "mcp-starter"
+name = "word-to-pdf-mcp"
 version = "0.1.0"
-description = "Add your description here"
+description = "MCP server for validation and Word-to-PDF conversion tools"
 readme = "README.md"
 requires-python = ">=3.11"
 dependencies = [
-    "dotenv>=0.9.9",
     "fastmcp>=2.11.2",
     "python-dotenv>=1.1.1",
     "pypandoc>=1.14",
