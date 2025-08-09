@@ -22,3 +22,9 @@ build/
 *.egg-info/
 *.log
 uv.lock
+
+# Downloaded packages and binaries
+*.deb
+*.rpm
+*.exe
+*.msi
