@@ -15,7 +15,6 @@ from dotenv import load_dotenv
 from fastmcp import FastMCP
 from fastmcp.server.auth.providers.bearer import BearerAuthProvider, RSAKeyPair
 from mcp.server.auth.provider import AccessToken
-from pydantic import BaseModel
 
 
 # Load environment variables from .env
@@ -39,13 +38,6 @@ class SimpleBearerAuthProvider(BearerAuthProvider):
         if token == self.token:
             return AccessToken(token=token, client_id="puch-client", scopes=["*"], expires_at=None)
         return None
-
-
-class RichToolDescription(BaseModel):
-    """Placeholder for compatibility with existing style."""
-    description: str
-    use_when: str
-    side_effects: str | None = None
 
 
 # Initialize MCP server
