@@ -3,3 +3,5 @@ fastmcp>=2.11.2
 pypandoc>=1.14
 requests>=2.31.0
 uvicorn>=0.35.0
+starlette>=0.37.2
+docx2pdf>=0.1.8

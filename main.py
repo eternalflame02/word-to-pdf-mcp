@@ -10,15 +10,21 @@ Only two tools are registered: validate and convert_word_to_pdf.
 
 from __future__ import annotations
 
+import logging
 import os
 from dotenv import load_dotenv
 from fastmcp import FastMCP
 from fastmcp.server.auth.providers.bearer import BearerAuthProvider, RSAKeyPair
 from mcp.server.auth.provider import AccessToken
+from starlette.applications import Starlette
+from starlette.staticfiles import StaticFiles
 
 
 # Load environment variables from .env
 load_dotenv()
+
+# Basic logging config so tool logs are visible
+logging.basicConfig(level=logging.INFO, format='%(asctime)s %(levelname)s %(name)s - %(message)s')
 
 TOKEN = os.environ.get("AUTH_TOKEN")
 MY_NUMBER = os.environ.get("MY_NUMBER")
@@ -48,13 +54,24 @@ mcp = FastMCP("Puch MCP Server", auth=SimpleBearerAuthProvider(TOKEN))
 try:
     from tools import validate as validate_tool
     from tools import convert as convert_tool
+    from tools import health as health_tool
 
     validate_tool.register(mcp)
     convert_tool.register(mcp)
+    health_tool.register(mcp)
 except Exception as e:
     # Non-fatal; surfaces during tool call if needed
     print(f"[tools] Warning: failed to register external tools: {e}")
 
 
 # Expose ASGI app for uvicorn
-app = mcp.http_app()  # Default path: /mcp/
+# We wrap the MCP app to also serve static files (generated PDFs) at /files
+FILES_DIR = os.environ.get("FILES_DIR", "files")
+os.makedirs(FILES_DIR, exist_ok=True)
+
+base_app = mcp.http_app()  # This app already serves MCP at /mcp
+# Important: pass the FastMCP app's lifespan to the parent app so session manager initializes
+app = Starlette(lifespan=base_app.lifespan)
+# Mount static first so it's not shadowed by the catch-all mount
+app.mount("/files", StaticFiles(directory=FILES_DIR, check_dir=True), name="files")
+app.mount("/", base_app)
